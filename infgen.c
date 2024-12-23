@@ -26,46 +26,64 @@
  Read a zlib, gzip, png, or raw deflate stream and write a defgen-compatible or
  simple binary encoded stream representing that input to stdout. This is based
  on the puff.c code to decompress deflate streams. Note that neither the zlib
- nor the gzip trailer is checked against the uncompressed data (in fact the
- uncompressed data is never generated) -- only the fact that the trailer is
- present is checked.
+ nor the gzip trailer is checked against the uncompressed data -- only the fact
+ that the trailer is present is checked.
 
- Usage: infgen [-d[d]] [-m] [-q[q]] [-i] [-s] [-r] [-b[b]] < foo.gz > foo.def
-    or: infgen [-d[d]] [-m] [-q[q]] [-i] [-s] [-r] [-b[b]] foo.gz > foo.def
+ Usage: infgen [-[d[d]][m][i][s][c[c]][q[q]][r][b[b]]] < foo.gz > foo.def
+    or: infgen [-[d[d]][m][i][s][c[c]][q[q]][r][b[b]]] foo.gz > foo.def
 
  where foo.gz is a gzip file (it could have been a zlib, png, or raw deflate
  stream as well), and foo.def is a defgen description of the file or stream,
  which is in a readable text format (unless -b is used). For png files, the
- output is a description of only the zlib stream extracted from the IDAT
- blocks.
+ output is a description of the zlib stream extracted from the IDAT chunks.
 
  The description includes the literal/length and distance code lengths for
  dynamic blocks. The -d (dynamic) option generates directives to exactly
  reconstruct the dynamic block headers. With -d, the code lengths are still
  included, but now as comments instead of directives. The -dd option is the
  same as -d, but with the bit sequences for each item shown as a comment after
- the item. The -s (statistics) option writes out comments with statistics for
- each deflate block and totals at the end.
+ the item.
 
  The -m (match) option shows the copied data after each match.
-
- The -q (quiet) option supresses the dynamic block code lengths, whether as
- directives or as comments. The -qq (really quiet) option supresses the output
- of all deflate stream descriptions, leaving only the header and trailer
- information. However if -qq is used with -s, the statistics information on the
- deflate stream is still included.
 
  The -i (info) option generates additional directives for gzip or zlib headers
  that permit their exact reconstruction. For png files, -i will show chunk
  types and lengths as comments, but not the contents, other than IDAT chunks.
 
+ The -s (statistics) option writes out comments with statistics for each
+ deflate block and totals at the end.
+
+ The -c (color) option prints the output with different standard terminal
+ colors for the different components, on supporting terminals. -cc uses the
+ high-intensity colors instead of the standard colors. With -dd, Huffman code
+ bits are gray in the comment field, to discriminate the code bits from the
+ extra bits in lens and match directives.
+
+ The -q (quiet) option suppresses the dynamic block code lengths, whether as
+ directives or as comments. The -qq (really quiet) option suppresses the output
+ of all deflate stream descriptions, leaving only the header and trailer
+ information. However if -qq is used with -s, the statistics information on the
+ deflate stream is still included.
+
  The -r (raw) option forces the interpretation of the input as a raw deflate
  stream, for those cases where the start of a raw stream happens to mimic one
- of the other headers. The -b (binary) option writes a compact binary format
- instead of the defgen format. In that case, all other options except -r are
- ignored. The -bb option includes compressed-data bit counts in the output.
+ of the other headers.
 
- Both the defgen and compact binary formats are described below.
+ The -b (binary) option writes a compact binary format instead of the defgen
+ format. In that case, all other options except -r are ignored. The -bb option
+ includes compressed-data bit counts in the output.
+
+ Examples:
+
+    infgen foo.gz               show the disassembled gzip/deflate stream
+    infgen -q foo.gz            show only the block data contents
+    infgen -s foo.gz            include statistics on the blocks and streams
+    infgen -id foo.gz           show the contents of wrapper and block headers
+    infgen -ddm foo.gz          show dynamic headers, bits, and matched strings
+    infgen -iddcc foo.gz        let's see it all in technicolor
+    infgen -b foo.gz > foo.bin  write the compact binary format instead of text
+
+ Both the defgen and the compact binary formats are described below.
  */
 
 /*
@@ -108,13 +126,13 @@
     the time parameter with the local time zone interpretation of that value.
     If "os" is not present, it is taken to be 3 (for Unix). If "xfl" or "time"
     is not present, the value is taken to be zero. "text" and "hcrc" have no
-    parameter. "text" sets the text flag. hcrc signals a two-byte crc of the
+    parameter. "text" sets the text flag. hcrc signals a two-byte CRC of the
     header.
 
     The "crc" directive writes the CRC-32 of the uncompressed data in
     little-endian order. The "length" directive writes the length of the
     uncompressed data, modulo 2^32, in little-endian order. The combination of
-    a crc and a length in that order is the gzip trailer. Either or both can
+    a CRC and a length in that order is the gzip trailer. Either or both can
     optionally have a numeric parameter in the range 0..2^32-1 which would be
     used in place of the value derived from the data. infgen does not write
     those parameters.
@@ -127,10 +145,10 @@
     is taken to be 2. zlib may also be preceded by a "dict" directive with the
     dictionary id as the numeric parameter, in the range 0..2^32-1.
 
-    The "adler" directive writes the adler checksum of the uncompressed data in
-    big-endian order. This is the zlib trailer. adler may optionally have a
+    The "adler" directive writes the Adler-32 checksum of the uncompressed data
+    in big-endian order. This is the zlib trailer. adler may optionally have a
     numeric parameter in the range 0..2^32-1 that is used in place of the
-    actual adler checksum of the data.
+    actual Adler-32 checksum of the data.
 
     Deflate blocks:
 
@@ -197,10 +215,12 @@
     and "match", and optionally "copy". "data", "literal", and "copy" have the
     same parameters, directly representing bytes of data. "data" may be used
     only in stored blocks and "literal" may be used only in fixed or dynamic
-    blocks. If the -m option is given, then "copy" shows the data copied after
-    each match. "copy" shows redundant information, as it can be derived from
-    the previously decompressed data and each match length and distance. The
-    parameters of data, literal, and copy are a series of decimal numbers
+    blocks. If the -m option is given to infgen, then "copy" shows the data
+    copied after each match. "copy" provides redundant information, as it can
+    be derived from the previously decompressed data and each match length and
+    distance. "copy" directives are ignored by defgen.
+
+    The parameters of data, literal, and copy are a series of decimal numbers
     separated by spaces, followed by a string of printable characters. Each
     decimal number is in the range 0..255, and represents one byte of data. The
     string is a single quote, followed by any number of characters in the range
@@ -209,12 +229,13 @@
     of line or any other character not in the range 32..126. To append a
     comment to a line with a string, a tab ('\t') can end the string, which may
     then be followed by blank space and an exclamation mark for the comment.
-    Either the numbers or the string are optional.
+    Either the numbers or the string are optional -- the directive's parameters
+    may have only numbers or only a string.
 
     match has two numerical parameters. The first is the length of the match,
     in 3..258. The second is the distance back, in 1..32768.
 
-    The data and the current block ends with the "end" directive.
+    The data and the current block ends with an "end" directive.
 
     The "end" of a block that was started with "last" marks the end of the
     deflate stream. If that last block does not end at a bit boundary, the
@@ -331,7 +352,7 @@
     ncode       number of code length codes (4..19)
     ncode *     ncode bytes follow:
         len+1   code length plus one (1..8, meaning 0..7)
-    opcodes *   enough opcodes follow to desribe nlen + ndist codes
+    opcodes *   enough opcodes follow to describe nlen + ndist codes
         opcode  each byte is 1..16 for lengths 0..15, or 17..20 to repeat the
                     the last length 3..6 times, or 21..156 to repeat zeros
                     3..138 times
@@ -363,7 +384,7 @@
                  a terminating 0 byte
      10..0x3f:   reserved (not used) -- assume these are followed by a zero-
                  terminated sequence of bytes, like 4, 5, and 9 above (this
-                 permits compatible future use)
+                 permits compatible future extensions)
      0x40..0x7e: reserved (not used) -- assume these are followed by nothing
  */
 
@@ -528,31 +549,6 @@ local const char *inferr[] = {
 };
 #define IG_ERRS (sizeof(inferr)/sizeof(char *))
 
-// Print an error message and exit. Return a value to use in an expression,
-// even though the function will never return.
-local inline int bail(char *fmt, ...) {
-    fflush(stdout);
-    fputs("infgen error: ", stderr);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    putc('\n', stderr);
-    exit(1);
-    return 0;
-}
-
-// Print a warning to stderr.
-local inline void warn(char *fmt, ...) {
-    fflush(stdout);
-    fputs("infgen warning: ", stderr);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    putc('\n', stderr);
-}
-
 // Maximums for allocations and loops. It is not useful to change these --
 // they are fixed by the deflate format.
 #define MAXBITS 15              // maximum bits in a code
@@ -573,6 +569,7 @@ struct state {
     int draw;                   // true to output dynamic descriptor
     int copy;                   // true to output match data
     int stats;                  // true to output statistics
+    int color;                  // 0 no color, 1 standard, >1 high intensity
     int col;                    // state within data line
     unsigned max;               // maximum distance (bytes so far)
     unsigned win;               // window size from zlib header or 32K
@@ -619,6 +616,80 @@ struct state {
     uint8_t window[MAXDIST];    // sliding uncompressed data window
 };
 
+// Return a string to set or reset the terminal output color. This uses the
+// xterm-256 escape codes.
+enum hue {
+    RESET = -1,
+    BLACK,
+    RED,
+    GREEN,
+    YELLOW,
+    BLUE,
+    MAGENTA,
+    CYAN,
+    WHITE,
+    GRAY
+};
+local char const *color(enum hue h, struct state *s) {
+    if (s->color == 0)
+        return "";
+    if (s->color > 1 && h >= BLACK && h <= WHITE)
+        // High intensity.
+        h += 8;
+    switch ((int)h) {
+    case 0: return "\033[38;5;0m";
+    case 1: return "\033[38;5;1m";
+    case 2: return "\033[38;5;2m";
+    case 3: return "\033[38;5;3m";
+    case 4: return "\033[38;5;4m";
+    case 5: return "\033[38;5;5m";
+    case 6: return "\033[38;5;6m";
+    case 7: return "\033[38;5;7m";
+    case 8: return "\033[38;5;8m";
+    case 9: return "\033[38;5;9m";
+    case 10: return "\033[38;5;10m";
+    case 11: return "\033[38;5;11m";
+    case 12: return "\033[38;5;12m";
+    case 13: return "\033[38;5;13m";
+    case 14: return "\033[38;5;14m";
+    case 15: return "\033[38;5;15m";
+    default: return "\033[0m";              // reset
+    }
+}
+
+#define KEY CYAN            // color for keywords
+#define ARG GREEN           // color for numeric arguments
+#define TEXT YELLOW         // color for string literals
+#define CODE GRAY           // color for Huffman codes in comments
+#define ERROR RED           // color for error messages
+#define WARN MAGENTA        // color for warning messages
+// Comments are in the default color, except for Huffman codes.
+
+// Print an error message and exit. Return a value to use in an expression,
+// even though the function will never return.
+local inline int bail(struct state *s, char *fmt, ...) {
+    fflush(s->out);
+    fprintf(stderr, "%sinfgen error: ", color(ERROR, s));
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "\n%s", color(RESET, s));
+    exit(1);
+    return 0;
+}
+
+// Print a warning to stderr.
+local inline void warn(struct state *s, char *fmt, ...) {
+    fflush(s->out);
+    fprintf(stderr, "%sinfgen warning: ", color(WARN, s));
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "\n%s", color(RESET, s));
+}
+
 #define LINELEN 79      // target line length for data and literal commands
 #define SEQCOL 24       // column in which to start bit sequence comments
 
@@ -640,6 +711,7 @@ local void seqtab(struct state *s) {
 // Write the bits that composed the last item, as a comment starting in column
 // SEQCOL. This assumes that tab stops are at multiples of eight.
 local inline void putbits(struct state *s) {
+    fputs(color(RESET, s), s->out);
     if (s->draw > 1) {
         // Start a comment at column SEQCOL.
         seqtab(s);
@@ -647,21 +719,26 @@ local inline void putbits(struct state *s) {
 
         // Write the sequences in reverse order, since they were read from
         // bottom up. In each sequence, write the most to least significant
-        // bit, i.e. the usual order.
+        // bit, i.e. the usual order. Show Huffman codes in gray.
         while (s->seqs) {
             s->seqs--;
             short seq = s->seq[s->seqs];
             int len = s->len[s->seqs];
             if (len) {
                 putc(' ', s->out);
+                if (len < 0)
+                    fputs(color(CODE, s), s->out);
+                int n = abs(len);
                 do {
-                    fputc('0' + ((seq >> --len) & 1), s->out);
-                } while (len);
+                    fputc('0' + ((seq >> --n) & 1), s->out);
+                } while (n);
+                if (len < 0)
+                    fputs(color(RESET, s), s->out);
             }
         }
     }
 
-    // End the comment and the line.
+    // End the comment (if any) and the line.
     putc('\n', s->out);
     s->col = 0;
 }
@@ -671,6 +748,7 @@ local inline void putbits(struct state *s) {
 // literals whenever possible. If seq is true and s->draw > 1, also display the
 // sequences of bits that led to this value.
 local inline void putval(int val, char *token, int seq, struct state *s) {
+    // seq is true to show bits.
     seq = seq && s->draw > 1;
 
     // New line if too long or decimal after string.
@@ -678,7 +756,9 @@ local inline void putval(int val, char *token, int seq, struct state *s) {
         (s->col < 0 && (val < 0x20 || val > 0x7e)) || seq) {
         if (s->col)
             putc('\n', s->out);
+        fputs(color(KEY, s), s->out);
         s->col = fprintf(s->out, "%s", token);
+        fputs(color(ARG, s), s->out);
     }
 
     // String literal (already range-checked above).
@@ -689,7 +769,8 @@ local inline void putval(int val, char *token, int seq, struct state *s) {
 
     // New string literal (mark with negative lit).
     else if (val >= 0x20 && val <= 0x7e) {
-        s->col += fprintf(s->out, " '%c", val);
+        fprintf(s->out, " '%s%c", color(TEXT, s), val);
+        s->col += 3;
         s->col = -s->col;
     }
 
@@ -716,11 +797,11 @@ local int idat(struct state *s) {
                            ((uint32_t)head[1] << 16) +
                            ((uint32_t)head[0] << 24);
             if (crc != ~s->crc)
-                warn("corrupt PNG");
+                warn(s, "corrupt PNG");
         }
         if (got < 12) {
             if (got != 4)
-                warn("invalid PNG structure");
+                warn(s, "invalid PNG structure");
             s->chunk = 0;
             return EOF;
         }
@@ -732,7 +813,7 @@ local int idat(struct state *s) {
         if (s->info) {
             // Show the chunk information.
             if (s->col) {
-                putc('\n', s->out);
+                fprintf(s->out, "\n%s", color(RESET, s));
                 s->col = 0;
             }
             fprintf(s->out, "! PNG %s (%ld)\n", head + 8, s->chunk);
@@ -761,7 +842,7 @@ local int idat(struct state *s) {
             s->crc = ~crc32(~s->crc, junk, got);
             s->chunk -= got;
             if (got != get) {
-                warn("invalid PNG structure");
+                warn(s, "invalid PNG structure");
                 return EOF;
             }
         } while (s->chunk);
@@ -849,7 +930,7 @@ local int stored(struct state *s) {
         return IG_STORED_LENGTH_ERR;            // didn't match complement!
     if (s->stats) {
         if (s->col) {
-            putc('\n', s->out);
+            fprintf(s->out, "\n%s", color(RESET, s));
             s->col = 0;
         }
         fprintf(s->out, "! stats stored length %u\n", len);
@@ -896,7 +977,7 @@ local int stored(struct state *s) {
             putc('\n', s->out);
             s->col = 0;
         }
-        fputs("end\n", s->out);
+        fprintf(s->out, "%send\n%s", color(KEY, s), color(RESET, s));
     }
     if (s->stats)
         end(s);
@@ -913,7 +994,7 @@ struct huffman {
     short *symbol;      // canonically ordered symbols
 };
 
-// Decode a code from the stream s using huffman table h. Return the symbol or
+// Decode a code from the stream s using Huffman table h. Return the symbol or
 // a negative value if there is an error. If all of the lengths are zero, i.e.
 // an empty code, or if the code is incomplete and an invalid code is received,
 // then IG_BAD_CODE_ERR is returned after reading MAXBITS bits.
@@ -938,7 +1019,7 @@ local inline int decode(struct state *s, struct huffman *h) {
                     for (int i = 0; i < len; i++)
                         rev = (rev << 1) | ((code >> i) & 1);
                     s->seq[s->seqs] = rev;
-                    s->len[s->seqs] = len;
+                    s->len[s->seqs] = -len;     // note as a Huffman code
                     s->seqs++;
                 }
 
@@ -1109,10 +1190,11 @@ local int codes(struct state *s,
             }
             if (s->data) {
                 if (s->col) {
-                    putc('\n', s->out);
+                    fprintf(s->out, "\n%s", color(RESET, s));
                     s->col = 0;
                 }
-                s->col = fprintf(s->out, "match %d %u", len, dist);
+                fprintf(s->out, "%smatch %s", color(KEY, s), color(ARG, s));
+                s->col = 6 + fprintf(s->out, "%d %u", len, dist);
                 putbits(s);
                 if (s->copy) {
                     // Show the data copied by the match.
@@ -1122,13 +1204,13 @@ local int codes(struct state *s,
                         i &= MAXDIST-1;
                     } while (i != s->next);
                     if (s->col) {
-                        putc('\n', s->out);
+                        fprintf(s->out, "\n%s", color(RESET, s));
                         s->col = 0;
                     }
                 }
             }
             if (dist > s->max) {
-                warn("distance too far back (%u/%u)", dist, s->max);
+                warn(s, "distance too far back (%u/%u)", dist, s->max);
                 s->max = MAXDIST;       // issue warning only once
             }
 
@@ -1158,7 +1240,7 @@ local int codes(struct state *s,
             putc('\n', s->out);
             s->col = 0;
         }
-        fputs("end", s->out);
+        fprintf(s->out, "%send", color(KEY, s));
         s->col = 3;
         putbits(s);
     }
@@ -1169,7 +1251,7 @@ local int codes(struct state *s,
                     s->litbits / (double)(s->symbols - s->matches),
                     s->litbits, s->symbols - s->matches);
         else
-            fprintf(s->out, "! stats literals none\n");
+            fputs("! stats literals none\n", s->out);
         s->littot += s->litbits;
         if (s->matches) {
             fprintf(s->out, "! stats matches %.1f%% (%" PRIuMAX " x %.1f)\n",
@@ -1179,7 +1261,7 @@ local int codes(struct state *s,
             s->matchtot += s->matchlen;
         }
         else
-            fprintf(s->out, "! stats matches none\n");
+            fputs("! stats matches none\n", s->out);
         end(s);
     }
 
@@ -1194,7 +1276,7 @@ local int fixed(struct state *s) {
     static struct huffman lencode = {lencnt, lensym};
     static struct huffman distcode = {distcnt, distsym};
 
-    // Build fixed huffman tables if first call (not thread safe).
+    // Build fixed Huffman tables if first call (not thread safe).
     static int virgin = 1;
     if (virgin) {
         int symbol;
@@ -1229,7 +1311,7 @@ local int fixed(struct state *s) {
 local int dynamic(struct state *s) {
     // Get number of lengths in each table, check lengths.
     if (s->data && s->col) {
-        putc('\n', s->out);
+        fprintf(s->out, "\n%s", color(RESET, s));
         s->col = 0;
     }
     int nlen = bits(s, 5) + 257;
@@ -1243,7 +1325,8 @@ local int dynamic(struct state *s) {
         putc(ncode, s->out);
     }
     if (s->draw) {
-        s->col = fprintf(s->out, "count %d %d %d", nlen, ndist, ncode);
+        fprintf(s->out, "%scount %s", color(KEY, s), color(ARG, s));
+        s->col = 6 + fprintf(s->out, "%d %d %d", nlen, ndist, ncode);
         putbits(s);
     }
 
@@ -1258,14 +1341,15 @@ local int dynamic(struct state *s) {
         if (s->binary)
             putc(len + 1, s->out);
         if (s->draw && len) {
-            s->col = fprintf(s->out, "code %d %d", order[index], len);
+            fprintf(s->out, "%scode %s", color(KEY, s), color(ARG, s));
+            s->col = 5 + fprintf(s->out, "%d %d", order[index], len);
             putbits(s);
         }
     }
     for (; index < 19; index++)
         lengths[order[index]] = 0;
 
-    // Build huffman table for code lengths codes (use lencode temporarily).
+    // Build Huffman table for code lengths codes (use lencode temporarily).
     short lencnt[MAXBITS+1], lensym[MAXLCODES];         // lencode memory
     struct huffman lencode = {lencnt, lensym};          // length code
     int err = construct(&lencode, lengths, 19);
@@ -1305,11 +1389,14 @@ local int dynamic(struct state *s) {
                 putc(symbol + (len == -1 ? 18 : 14), s->out);
             if (s->draw) {
                 if (s->col) {
-                    putc('\n', s->out);
+                    fprintf(s->out, "\n%s", color(RESET, s));
                     s->col = 0;
                 }
-                s->col = fprintf(s->out, "%s %d",
-                                 len == -1 ? "zeros" : "repeat", symbol);
+                fputs(color(KEY, s), s->out);
+                s->col = fprintf(s->out, "%s ",
+                                 len == -1 ? "zeros" : "repeat");
+                fputs(color(ARG, s), s->out);
+                s->col += fprintf(s->out, "%d", symbol);
                 putbits(s);
             }
             if (len == -1)
@@ -1321,7 +1408,7 @@ local int dynamic(struct state *s) {
     if (s->binary)
         putc(0, s->out);
     if (s->draw && s->col) {
-        putc('\n', s->out);
+        fprintf(s->out, "\n%s", color(RESET, s));
         s->col = 0;
     }
     if (s->stats)
@@ -1332,26 +1419,32 @@ local int dynamic(struct state *s) {
     if (s->tree) {
         for (index = 0; index < nlen; index++)
             if (lengths[index] != 0)
-                fprintf(s->out, "%slitlen %d %d\n", s->draw ? "! " : "",
-                        index, lengths[index]);
+                fprintf(s->out, "%slitlen %s%d %d\n%s",
+                        s->draw ? "! " : color(KEY, s),
+                        s->draw ? "" : color(ARG, s),
+                        index, lengths[index],
+                        s->draw ? "" : color(RESET, s));
         for (; index < nlen + ndist; index++)
             if (lengths[index] != 0)
-                fprintf(s->out, "%sdist %d %d\n", s->draw ? "! " : "",
-                        index - nlen, lengths[index]);
+                fprintf(s->out, "%sdist %s%d %d\n%s",
+                        s->draw ? "! " : color(KEY, s),
+                        s->draw ? "" : color(ARG, s),
+                        index - nlen, lengths[index],
+                        s->draw ? "" : color(RESET, s));
     }
 
     // Check for end-of-block code -- there better be one!
     if (lengths[256] == 0)
         return IG_NO_END_CODE_ERR;
 
-    // Build huffman table for literal/length codes.
+    // Build Huffman table for literal/length codes.
     err = construct(&lencode, lengths, nlen);
     if (err < 0)
         return IG_LITLEN_CODE_OVER_ERR;
     else if (err > 0 && nlen - lencode.count[0] != 1)
         return IG_LITLEN_CODE_UNDER_ERR;    // incomplete with one code ok
 
-    // Build huffman table for distance codes.
+    // Build Huffman table for distance codes.
     short distcnt[MAXBITS+1], distsym[MAXDCODES];       // distcode memory
     struct huffman distcode = {distcnt, distsym};       // distance code
     err = construct(&distcode, lengths + nlen, ndist);
@@ -1426,7 +1519,7 @@ local int infgen(struct state *s) {
             s->matbits = 0;
             last = bits(s, 1);          // one if last block
             if (s->data && last) {
-                fputs("last", s->out);
+                fprintf(s->out, "%slast", color(KEY, s));
                 s->col = 4;
                 putbits(s);
             }
@@ -1441,17 +1534,19 @@ local int infgen(struct state *s) {
                     putc(s->bitbuf + (s->binary > 1 ? 1 << s->bitcnt : 0),
                          s->out);
                 if (s->data) {
-                    fputs("stored", s->out);
-                    s->col = 6;
-                    if (s->bitbuf)
+                    fputs(color(KEY, s), s->out);
+                    s->col = fprintf(s->out, "stored");
+                    if (s->bitbuf) {
+                        fputs(color(ARG, s), s->out);
                         s->col += fprintf(s->out, " %d", s->bitbuf);
+                    }
                     putbits(s);
                 }
                 err = stored(s);
                 break;
             case 1:
                 if (s->data) {
-                    fputs("fixed", s->out);
+                    fprintf(s->out, "%sfixed", color(KEY, s));
                     s->col = 5;
                     putbits(s);
                 }
@@ -1459,7 +1554,7 @@ local int infgen(struct state *s) {
                 break;
             case 2:
                 if (s->data) {
-                    fputs("dynamic", s->out);
+                    fprintf(s->out, "%sdynamic", color(KEY, s));
                     s->col = 7;
                     putbits(s);
                 }
@@ -1467,7 +1562,7 @@ local int infgen(struct state *s) {
                 break;
             default:    // 3
                 if (s->data) {
-                    fputs("block3", s->out);
+                    fprintf(s->out, "%sblock3", color(KEY, s));
                     s->col = 6;
                     putbits(s);
                 }
@@ -1495,7 +1590,7 @@ local int infgen(struct state *s) {
 
     // Finish off dangling literal line.
     if (s->data && s->col)
-        putc('\n', s->out);
+        fprintf(s->out, "\n%s", color(RESET, s));
     s->col = 0;
 
     // Write the leftovers information.
@@ -1504,8 +1599,10 @@ local int infgen(struct state *s) {
         putc(8, s->out);
         putc(s->bitbuf + (s->binary > 1 ? 1 << s->bitcnt : 0), s->out);
     }
-    if (s->data && s->bitcnt && s->bitbuf)
-        s->col += fprintf(s->out, "bound %d", s->bitbuf);
+    if (s->data && s->bitcnt && s->bitbuf) {
+        fprintf(s->out, "%sbound %s", color(KEY, s), color(ARG, s));
+        s->col = 6 + fprintf(s->out, "%d", s->bitbuf);
+    }
     if (s->draw > 1 && s->bitcnt && s->seqs < MAXSEQS) {
         s->seq[s->seqs] = s->bitbuf;
         s->len[s->seqs] = s->bitcnt;
@@ -1513,7 +1610,7 @@ local int infgen(struct state *s) {
         putbits(s);
     }
     else if (s->data && s->bitcnt && s->bitbuf)
-        putc('\n', s->out);
+        fprintf(s->out, "\n%s", color(RESET, s));
 
     // Write final statistics.
     if (s->stats) {
@@ -1532,7 +1629,7 @@ local int infgen(struct state *s) {
                     100 * (s->matchtot / (double)(s->outbytes)),
                     s->matchnum, s->matchtot / (double)(s->matchnum));
         else
-            fprintf(s->out, "! stats total no matches\n");
+            fputs("! stats total no matches\n", s->out);
     }
 
     // Return error state.
@@ -1546,16 +1643,18 @@ local void help(void) {
           "infgen " IG_VERSION "\n"
           "Usage:\n"
           "\n"
-          "  infgen [-d[d]mq[q]isrb[b]] input_path > output_path\n"
-          "  infgen [-d[d]mq[q]isrb[b]] < input_path > output_path\n"
+          "  infgen [-d[d]misc[c]q[q]rb[b]] input_path > output_path\n"
+          "  infgen [-d[d]misc[c]q[q]rb[b]] < input_path > output_path\n"
           "\n"
           "    -d   Write raw dynamic header (code lengths in comments)\n"
           "    -dd  Also show the bits for each element displayed\n"
           "    -m   Show copied data after each match\n"
-          "    -q   Do not write dynamic code lengths (comments or not)\n"
-          "    -qq  Do not write deflate stream description at all\n"
           "    -i   Include detailed gzip / zlib header descriptions\n"
           "    -s   Include deflate block statistics (as comments)\n"
+          "    -c   Color the output components (if terminal supports)\n"
+          "    -cc  Use high-intensity instead of standard colors\n"
+          "    -q   Do not write dynamic code lengths (comments or not)\n"
+          "    -qq  Do not write deflate stream description at all\n"
           "    -r   Assume raw deflate data -- do not look for headers\n"
           "    -b   Write compact binary format (only -r honored)\n"
           "    -bb  Write compact binary format with bit counts\n"
@@ -1565,7 +1664,7 @@ local void help(void) {
 
 // Get the next byte of input, or abort if none.
 #define NEXT(in) ((n = getc(in)) != EOF ? n : (s.col ? putc('\n', s.out) : 0, \
-                  bail("unexpected end of input")))
+                  bail(&s, "unexpected end of input")))
 
 // Read a gzip, zlib, or raw deflate stream from stdin or a provided path, and
 // write a defgen description of the stream to stdout.
@@ -1582,13 +1681,14 @@ int main(int argc, char **argv) {
     s.tree = 1;
     s.draw = 0;
     s.stats = 0;
+    s.color = 0;
     s.win = MAXDIST;
     s.chunk = -1;
     while (--argc) {
         char *arg = *++argv;
         if (*arg++ != '-') {
             if (path != NULL)
-                bail("only one input file permitted (%s)", arg - 1);
+                bail(&s, "only one input file permitted (%s)", arg - 1);
             path = arg - 1;
             continue;
         }
@@ -1605,10 +1705,11 @@ int main(int argc, char **argv) {
             case 'd':  s.draw++;        break;
             case 'm':  s.copy = 1;      break;
             case 's':  s.stats = 1;     break;
+            case 'c':  s.color++;       break;
             case 'r':  head = 0;        break;
             case 'h':  help();          return 0;
             default:
-                bail("invalid option '%c' (type infgen for help)", *--arg);
+                bail(&s, "invalid option '%c' (type infgen for help)", *--arg);
             }
     }
     if (s.data == 0)
@@ -1627,7 +1728,7 @@ int main(int argc, char **argv) {
     else {
         s.in = fopen(path, "rb");
         if (s.in == NULL)
-            bail("could not open input file %s", path);
+            bail(&s, "could not open input file %s", path);
     }
     s.out = stdout;
     if (s.binary) {
@@ -1661,19 +1762,21 @@ int main(int argc, char **argv) {
             if (wrap)
                 fputs("!\n", s.out);
             if (NEXT(s.in) != 8)
-                bail("unknown gzip compression method %d", n);
+                bail(&s, "unknown gzip compression method %d", n);
             ret = NEXT(s.in);
             if (ret & 0xe0)
-                bail("reserved gzip flags set (%02x)", ret);
+                bail(&s, "reserved gzip flags set (%02x)", ret);
             if (s.info && (ret & 1))
-                fputs("text\n", s.out);
+                fprintf(s.out, "%stext\n%s", color(KEY, &s), color(RESET, &s));
             unsigned long num = NEXT(s.in);
             num += NEXT(s.in) << 8;
             num += NEXT(s.in) << 16;
             num += NEXT(s.in) << 24;
             if (s.info && num) {
                 time_t t = num;
-                s.col = fprintf(s.out, "time %lu", num);
+                fprintf(s.out, "%stime %s", color(KEY, &s), color(ARG, &s));
+                s.col = 5 + fprintf(s.out, "%lu", num);
+                fputs(color(RESET, &s), s.out);
                 seqtab(&s);
                 char at[64];
                 strncpy(at, asctime(gmtime(&t)), sizeof(at) - 1);
@@ -1686,16 +1789,20 @@ int main(int argc, char **argv) {
             }
             val = NEXT(s.in);
             if (s.info && val)
-                fprintf(s.out, "xfl %u\n", val);
+                fprintf(s.out, "%sxfl %s%u\n%s",
+                        color(KEY, &s), color(ARG, &s), val, color(RESET, &s));
             val = NEXT(s.in);
             if (s.info && val != 3)
-                fprintf(s.out, "os %u\n", val);
+                fprintf(s.out, "%sos %s%u\n%s",
+                        color(KEY, &s), color(ARG, &s), val, color(RESET, &s));
             if (ret & 4) {              // extra field
                 val = NEXT(s.in);
                 val += NEXT(s.in) << 8;
                 if (val == 0) {
                     if (s.info)
-                        fputs("extra '\n", s.out);
+                        fprintf(s.out, "%sextra %s'\n%s",
+                                color(KEY, &s), color(ARG, &s),
+                                color(RESET, &s));
                 }
                 else {
                     unsigned sub = 0;   // offset within sub-field
@@ -1719,8 +1826,9 @@ int main(int argc, char **argv) {
                                     if (len < val) {
                                         // sub-field fits in extra field
                                         seqtab(&s);
-                                        fprintf(s.out, "! [id='%s' len=%u]\n",
-                                                id, len);
+                                        fprintf(s.out,
+                                                "%s! [id='%s' len=%u]\n",
+                                                color(RESET, &s), id, len);
                                         s.col = 0;
                                         if (len == 0) {
                                             sub = 0;
@@ -1735,7 +1843,8 @@ int main(int argc, char **argv) {
                                     // sub-field content
                                     if (--len == 0) {
                                         if (s.col) {
-                                            putc('\n', s.out);
+                                            fprintf(s.out, "\n%s",
+                                                    color(RESET, &s));
                                             s.col = 0;
                                         }
                                         sub = 0;
@@ -1749,7 +1858,7 @@ int main(int argc, char **argv) {
                     if (s.info && (!ok || (sub > 0 && sub < 4) || len)) {
                         // invalid sub-field structure
                         if (s.col) {
-                            putc('\n', s.out);
+                            fprintf(s.out, "\n%s", color(RESET, &s));
                             s.col = 0;
                         }
                         seqtab(&s);
@@ -1758,14 +1867,16 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (s.info && s.col) {
-                    putc('\n', s.out);
+                    fprintf(s.out, "\n%s", color(RESET, &s));
                     s.col = 0;
                 }
             }
             if (ret & 8) {              // file name
                 if (NEXT(s.in) == 0) {
                     if (s.info)
-                        fputs("name '\n", s.out);
+                        fprintf(s.out, "%sname %s'\n%s",
+                                color(KEY, &s), color(ARG, &s),
+                                color(RESET, &s));
                 }
                 else
                     do {
@@ -1773,14 +1884,16 @@ int main(int argc, char **argv) {
                             putval(n, "name", 0, &s);
                     } while (NEXT(s.in) != 0);
                 if (s.info && s.col) {
-                    putc('\n', s.out);
+                    fprintf(s.out, "\n%s", color(RESET, &s));
                     s.col = 0;
                 }
             }
             if (ret & 16) {             // comment field
                 if (NEXT(s.in) == 0) {
                     if (s.info)
-                        fputs("comment '\n", s.out);
+                        fprintf(s.out, "%scomment %s'\n%s",
+                                color(KEY, &s), color(ARG, &s),
+                                color(RESET, &s));
                 }
                 else
                     do {
@@ -1788,24 +1901,26 @@ int main(int argc, char **argv) {
                             putval(n, "comment", 0, &s);
                     } while (NEXT(s.in) != 0);
                 if (s.info && s.col) {
-                    putc('\n', s.out);
+                    fprintf(s.out, "\n%s", color(RESET, &s));
                     s.col = 0;
                 }
             }
-            if (ret & 2) {              // header crc
+            if (ret & 2) {              // header CRC
                 NEXT(s.in);
                 NEXT(s.in);
                 if (s.info)
-                    fputs("hcrc\n", s.out);
+                    fprintf(s.out, "%shcrc\n%s",
+                            color(KEY, &s), color(RESET, &s));
             }
             trail = 8;
             if (wrap)
-                fputs("gzip\n", s.out);
+                fprintf(s.out, "%sgzip\n%s",
+                        color(KEY, &s), color(RESET, &s));
         }
         else if (head && n != EOF && val == (137 << 8) + 'P') {
             // png file. Verify the remainder of "PNG".
             if (NEXT(s.in) != 'N' || NEXT(s.in) != 'G')
-                bail("invalid PNG header");
+                bail(&s, "invalid PNG header");
             if (s.info)
                 fputs("!\n", s.out);
 
@@ -1821,7 +1936,7 @@ int main(int argc, char **argv) {
             n = get(&s);
             val = ((unsigned)ret << 8) + (unsigned)n;
             if (n == EOF || val % 31 || (ret & 0xf) != 8 || (ret >> 4) > 7)
-                bail("invalid zlib header in IDAT");
+                bail(&s, "invalid zlib header in IDAT");
             goto zlib;
         }
         else if (head && n != EOF && val % 31 == 0 && (ret & 0xf) == 8 &&
@@ -1830,32 +1945,38 @@ int main(int argc, char **argv) {
           zlib:
             if (wrap)
                 fputs("!\n", s.out);
-            if (s.info && (val & 0xe0) != 0x80)   // compression level
-                fprintf(s.out, "level %d\n", (val >> 6) & 3);
-            if (val & 0x20) {                   // preset dictionary
+            if (s.info && (val & 0xe0) != 0x80)     // compression level
+                fprintf(s.out, "%slevel %s%d\n%s",
+                        color(KEY, &s), color(ARG, &s), (val >> 6) & 3,
+                        color(RESET, &s));
+            if (val & 0x20) {                       // preset dictionary
                 if (s.chunk != -1)
-                    bail("preset dictionary not valid in PNG");
+                    bail(&s, "preset dictionary not valid in PNG");
                 unsigned long num = NEXT(s.in);
                 num = (num << 8) + NEXT(s.in);
                 num = (num << 8) + NEXT(s.in);
                 num = (num << 8) + NEXT(s.in);
                 if (s.info)
-                    fprintf(s.out, "dict %lu\n", num);
+                    fprintf(s.out, "%sdict %s%lu\n%s",
+                            color(KEY, &s), color(ARG, &s), num,
+                            color(RESET, &s));
             }
             ret = (ret >> 4) + 8;
             s.win = 1U << ret;          // set window size from header
             trail = 4;
             if (s.info && ret != 15)
-                fprintf(s.out, "zlib %d\n", ret);
+                fprintf(s.out, "%szlib %s%d\n%s",
+                        color(KEY, &s), color(ARG, &s), ret,
+                        color(RESET, &s));
             else if (wrap)
-                fputs("zlib\n", s.out);
+                fprintf(s.out, "%szlib\n%s", color(KEY, &s), color(RESET, &s));
         }
         else {
             // Raw deflate data, put non-header bytes back (assumes two ok).
             ungetc(n, s.in);
             ret = ungetc(ret, s.in);    // this should work, but ...
             if (ret == EOF)             // only one ungetc() guaranteed
-                bail("could not ungetc() a second time (!)");
+                bail(&s, "could not ungetc() a second time (!)");
             trail = 0;
         }
 
@@ -1864,9 +1985,9 @@ int main(int argc, char **argv) {
 
         // Check return value and trailer size.
         if (ret > 0)
-            warn("incomplete deflate data");
+            warn(&s, "incomplete deflate data");
         else if (ret < 0)
-            warn("invalid deflate data -- %s",
+            warn(&s, "invalid deflate data -- %s",
                  -ret > 0 && -ret <= (int)IG_ERRS ?
                     inferr[-1 - ret] : "unknown");
         else {
@@ -1874,7 +1995,8 @@ int main(int argc, char **argv) {
             while (n < trail && get(&s) != EOF)
                 n++;
             if (n < trail) {
-                warn("incomplete %s trailer", trail == 4 ? "zlib" : "gzip");
+                warn(&s, "incomplete %s trailer",
+                     trail == 4 ? "zlib" : "gzip");
                 ret = 2;
             }
         }
@@ -1882,16 +2004,18 @@ int main(int argc, char **argv) {
         // Write defgen trailer (note: trailer is not validated).
         if (ret == 0 && wrap) {
             if (trail == 4)
-                fputs("!\nadler\n", s.out);
+                fprintf(s.out, "!\n%sadler\n%s",
+                        color(KEY, &s), color(RESET, &s));
             else if (trail == 8)
-                fputs("!\ncrc\nlength\n", s.out);
+                fprintf(s.out, "!\n%slength\n%s",
+                        color(KEY, &s), color(RESET, &s));
         }
 
         if (s.chunk != -1) {
             // Parse remainder of PNG file.
             fputs("!\n", s.out);
             if (s.chunk || get(&s) != EOF)
-                warn("invalid PNG file structure");
+                warn(&s, "invalid PNG file structure");
             break;
         }
     } while (ret == 0);
@@ -1903,6 +2027,6 @@ int main(int argc, char **argv) {
     if (path != NULL)
         fclose(s.in);
     if ((ferror(s.in) || ferror(s.out)) && errno)
-        bail("i/o error: %s", strerror(errno));
+        bail(&s, "i/o error: %s", strerror(errno));
     return ret;
 }
